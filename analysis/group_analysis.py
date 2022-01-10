@@ -73,9 +73,9 @@ def group_flights_data(filenames, dirpath):
                 final_data[data][model] /= len(filenames)
         else:
             final_data[data] /= len(filenames)
-    final_data['num_aircraft'] = 
-    final_data['num_flights'] = 
-    final_data['num_teorico_var'] = 
+    final_data['num_aircraft'] += data['num_aircraft']
+    final_data['num_flights'] += data['num_flights']
+    final_data['num_teorico_var'] += data['num_teorico_var']
 
 
 def group_same_instance_data(filenames, dirpath):
