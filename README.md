@@ -6,248 +6,895 @@
 [![QUBO](https://img.shields.io/badge/QUBO-Combinatorial%20Optimization-6A5ACD.svg)](https://docs.dwavequantum.com/en/latest/concepts/models.html)
 [![Quantum Annealing](https://img.shields.io/badge/Quantum%20Annealing-Optimization-663399.svg)](https://www.dwavesys.com/solutions-and-products/quantum-computing/)
 [![Aviation](https://img.shields.io/badge/Aviation-Tail%20Assignment-1E90FF.svg)](https://en.wikipedia.org/wiki/Tail_assignment)
+[![License](https://img.shields.io/badge/License-Apache%202.0-yellow.svg)](LICENSE)
 
-This project aims to create an implementation of the tail assignment problem using a quantum computing approach.
+**Quantum and hybrid optimization approaches for the airline Tail Assignment Problem using QUBO formulations and the D-Wave quantum annealing ecosystem.**
 
-## Authors
-Main Author: Luis Noites Martins (luis.noites.martins@fe.up.pt)
+The **Tail Assignment Problem (TAP)** determines which individual aircraft should operate each flight while satisfying operational constraints such as aircraft compatibility, passenger capacity, maintenance requirements, temporal feasibility, and aircraft routing.
 
-Supervisors: Ana Paula Rocha (arocha@fe.up.pt) and António J. M. Castro (frisky.antonio@gmail.com)
+This project investigates how TAP can be represented as a **Binary Quadratic Model (BQM)** and, in particular, as a **Quadratic Unconstrained Binary Optimization (QUBO)** problem. The resulting formulation can be solved using quantum annealing, quantum-classical hybrid methods, and classical BQM solvers available through the D-Wave ecosystem.
 
-## Tail Assignment Problem
+The repository was developed as a research project at the intersection of **airline operations research**, **combinatorial optimization**, and **quantum computing**.
 
-The tail assignment problem is the problem of assigning aircraft to flights considering multiple constraints while trying to minimize some objective function.
+---
 
-One important constraint to be considered while solving this problem is the pre-assigned activities each aircraft has, such as maintenance activities.
+## Overview
 
-Multiple implementations were already considered to solve this problem using different algorithms.
+Tail assignment is an important aircraft scheduling problem in airline operations.
 
-In this approach, we will take this problem as a scheduling problem where activities (flights + pre-assigned maintenance) are allocated to aircraft satisfying all the existent constraints.
+Given:
 
-## Quantum Annealing
+- a set of flights,
+- a fleet of individual aircraft,
+- aircraft models or aircraft fleets,
+- passenger demand,
+- airport information,
+- maintenance activities,
+- operational costs,
 
-Initially, a quantum annealing solution will be created based on the fact that the problem can be considered as a binary constraint problem where each pair aircraft-activity is either 1 (happens) or 0 (doesn't happen)
+the goal is to construct a feasible assignment of aircraft to flights while optimizing the quality and operational cost of that assignment.
 
-### Implementation Steps
+A possible aircraft-flight assignment is represented by a binary decision variable:
 
+```text
+x(f, a) = 1   if aircraft a operates flight f
+x(f, a) = 0   otherwise
+```
 
-### Notes
+The assignment problem can therefore be mapped naturally to a binary optimization problem.
 
-Flights and Maintenances should be previously ordered by Start_Time and End_Time in 2 separate CSV files (flights.csv and maintenances.csv)
-Although being considered for the constraints, no maintenances will be found on the resulting bqm as input for the quantum problem. It is not required since these variables are predetermined.
+Conceptually, the workflow implemented by the project is:
 
-All the maintenances are guaranteed since all the overlap flights are set to 0 and if there's any previous flight to maintenance then it should be on time on the maintenance airport.
+```text
+Airline operational data
+        │
+        ▼
+Feasibility preprocessing
+        │
+        ▼
+Tail-assignment constraints
+        │
+        ├── Aircraft compatibility
+        ├── Seat capacity
+        ├── Flight overlap
+        ├── Aircraft continuity
+        └── Maintenance feasibility
+        │
+        ▼
+   CSP or direct QUBO
+        │
+        ▼
+Binary Quadratic Model
+        │
+        ├── Quantum annealing
+        ├── Quantum-classical hybrid
+        ├── Simulated annealing
+        ├── Tabu search
+        └── Exact solving
+        │
+        ▼
+Aircraft → Flight assignment
+```
 
+---
 
-Set constraint to ensure that only possible connection between activities that are not possible to perform directly, i.e. activity1.destination != activity2.origin. Since each aircraft can perform different activities due to obligatory maintenances as well as the required model for each flight then for the different aircrafts the following pairs of activities were considered:
-1 - Flight-Flight: if 2 flights (A, B) have no direct connection then, if A and B happen, other flight (C) that has a direct connection to B must happen.
+## The Tail Assignment Problem
 
-2 - Flight-Maintenance/Maintenance-Flight: if a flight (A), has no direct connection to obligatory maintenance (B) then, if A happens, other flight (C) that has a direct connection to B must happen (since B is maintenance and, therefore, will happen)
+In airline operations, a flight schedule specifies which flights need to be operated, but an airline must still decide which **specific aircraft tail** will perform each flight.
 
-3 - Maintenance-Maintenance: If 2 obligatory maintenances (A,B) have no direct connection between each other then a path must be ensured between them. Therefore, 2 or more flights must happen (C,D) as A.destination == C.origin and D.destination == B.origin. The connection between C and D is previously ensured due to the connection constraint Flight-Flight.
-                    Special scenario: if there's one flight (K) that is able to connect directly A,B (A.destination == K.origin and K.destination == B.origin) then one flight might be enough to ensure this connection). 
+A valid assignment must satisfy multiple operational constraints.
 
+### Aircraft compatibility
 
+A flight may require a specific aircraft model or aircraft fleet.
 
+The implementation supports both:
 
-Reorder setas and model constraint setting some variables (pair -> flight,aircraft) as 0 as these variables are not valid for the solution of the problem :
-1 - if there's a flight associated to an aircraft but this connection is invalid due to the flight required aircraft model then this variable is set to 0 (this should not happened since in previous constraint this is always taken into account and therefore the variable will never be added to the constraint problem)
+- flights with a **pre-assigned aircraft model**;
+- flights with a **preferred aircraft fleet**.
 
-2 - if the aircraft have not enough seats (in total) for performing the flight then this variable is also set to 0 (this might happen in some scenarios where different aircraft from the same model have a different number of total seats and therefore although the required aircraft model is correct, the number of seats might not be enough to perform some flights)
+For fleet-based assignment, two broad fleet categories are considered:
 
-3 - if the aircraft have not enough business seats considering the business seats sold for a flight then this variable is also set to 0 (similar reason as 2)
+```text
+0 — Narrow-body aircraft
+1 — Wide-body aircraft
+```
 
+A wide-body aircraft may operate a flight requiring a narrow-body aircraft, but not vice versa.
 
-PS: Specify that setting the constraint of just assigning one aircraft to each flight have a better performance when it is done while considering the flights that overlap maintenances for each aircraft. It happens because for invalid variables (pair -> flight,aircraft) a constraint is not needed to be added and therefore it allows one to reduce the number of added constraints (that take the majority of the time to calculate the BQM)
+---
 
-Fixed_variables -> some variables are not part of the csp problem as they are obligatory set to 1 to allow the schedule to be valid
-Examples:
+### Seat capacity
 
-Maintenance in A
-Flight A->B
-Maintenance in B
-Since there's only one flight that allows both maintenances to be performed then that flight must be assigned to the specific aircraft
+An aircraft must provide enough total seats for the passengers booked on the flight.
 
-If the flight is only possible to be done by one aircraft and it does not overlap any maintenance or does not limit the possibility of allowing all maintenances to happen they it should be fixed to 1
+Assignments that cannot satisfy the required capacity are excluded from the model.
 
-Example of invalid:
-Flight: PRT -> LIS
-Maintenance: FNC
+Business-class capacity can also be considered when determining whether an aircraft is feasible for a flight.
 
-Although the activities does not overlap if the flight happen then it will not allow the maintenance to happen and therefore the flight can not happen
+---
 
-Extra: Flights that have no connection to the following maintenance or are not reached from the previous maintenance are not added as possible path between 2 maintenances
+### Flight overlap
 
+An aircraft cannot operate two flights whose execution intervals overlap.
 
-### QUBO
+Conflicting flight-aircraft assignments therefore receive QUBO interactions that prevent them from appearing simultaneously in a low-energy solution.
 
-In order to speedup the model creation this approach aims to create a QUBO directly while setting up the constraints without using any auxiliar library.
+---
 
-Following the same idea as the CSP implementation this approach considers multiple steps, one for each constraint considered:
+### Flight coverage
 
-1. No overlap flights: For each pari of flights that are not possible to be assigned to the same aircraft add an interaction of a positive value (macros.NO_OVERLAP_PARAM)
+A flight should not be assigned to more than one aircraft.
 
-2. Maximum one aircraft per flight: For each flight that may be operated by more than one aircraft, add an interaction between the variable flight-aircraft1 and flight-aircraft2 of a positive value (macros.MAX_ONE_PARAM)
+When multiple aircraft are capable of operating a flight, pairwise interactions are introduced between the corresponding decision variables.
 
-3. Activity pairs: for each pair of flights that may be operated by the same aircraft and that can not happen since there's no path between the 2 flights, add an interaction between the variable flight1-aircraft and flight2-aircraft of a positive value (macros.NO_PAIR_PARAM)
+---
 
-4 . Possible_connections: for each pair of flights that may be operated by the same aircraft and although having path between them, are not directly connected, the following situation is assumed: if A (initial flight) and B (final flight) are assigned to the same aircraft, then one of the flights that arrive to B and that can be reached from A needs to be assigned to the same aircraft.
+### Aircraft continuity
 
- OR( AND(INITIAL, FINAL, INITIAL_FINAL_AND) , (INTERMEDIATE_1 || INTERMEDIATE_2 || INTERMEDIATE_3), OUTPUT)
-OUTPUT = 1
+Flights assigned to the same aircraft must form a geographically feasible sequence.
 
+For example:
 
-Other possible connections are the flights that may happen before maintenances. In that case it is quite similar but this time it is only needed to ensure that if A (initial flight) is assigned to one aircraft that have a maintenance (B), then one of the flights that arrive to B and that can be reached from A needs to be assigned to this aircraft.
+```text
+Flight A: LIS → MAD
+Flight B: MAD → CDG
+```
 
-OR(XOR(A,1) ,  (INTERMEDIATE_1 || INTERMEDIATE_2 || INTERMEDIATE_3), OUTPUT)
-OUTPUT = 1
+forms a valid direct connection.
 
+However:
 
-5 . In order to ensure all the existent maintenances are guaranteed then for each pair of maintenances of the same aircraft that don't take place on the same airport it is necessary to ensure that one of the paths that connect both maintenances happen for the aircraft, i.e, if a maintenance A takes place in LIS and maintenance B takes place in FNC then a flight or a group of flights that allow the aircraft to be on time in both maintenances must be assigned to the considered aircraft. This is done, ensuring that one of the flights that may connect to maintenance A is assigned to the considered aircraft and also one of the flights that may connect to maintenance B is assigned to the same aircraft (no connection between middle flights is needed since it is guaranteed by constraint 3)
+```text
+Flight A: LIS → MAD
+Flight B: FRA → CDG
+```
 
-(INTERMEDIATE_1 || INTERMEDIATE_2 || INTERMEDIATE_3) -> OUTPUT
-OUTPUT = 1
+cannot be operated consecutively by the same aircraft unless intermediate activities provide a feasible path between both flights.
 
-Improvements keep exactly the same from the CSP implementation as they don't depend on the way model is obtained. 
+The model therefore considers connectivity between activities and encourages or enforces valid aircraft rotations.
 
+---
 
-For flights that are already fixed to 1 as being obligatory for an aircraft to perform maintenances, if other flight also requires that flight to ensure its maintenances then a solution is not possible to be obtained. Test -> test_one_flight_to_ensure_maintenances_two_aircraft
+### Maintenance feasibility
 
-### Improved QUBO
+Aircraft may contain mandatory pre-assigned maintenance activities.
 
-In order to reduce the time needed to calculate a QUBo as well as the number of generated variables some adaptions were made to constraints 4 and 5.
+A valid schedule must guarantee that an aircraft:
 
-For each flight a negative interaction is created between it and each one of the flights that can be performed after it. Doing this, allow to remove the first part of constraint 4 as if each flight is encouraged to be followed by one flight that might connect to it, then the global path is also encouraged and therefore if the used parameters are properly tunned it will ensure all paths between flights are valid
+1. can reach the maintenance airport before the maintenance starts;
+2. does not operate an overlapping flight;
+3. can continue from the maintenance location to subsequent assigned activities.
 
-The second condition of constraint 4 is kept as it is necessary to ensure that the chosen paths will guarantee maintenances
+Maintenance activities themselves are predetermined and therefore do not need to appear as free binary decision variables in the final optimization model.
 
-Constraint 5 also changed. Instead of obligating paths between maintenances, the flights that may happen before and after each maintenance is encouraged to happen for the proper aircraft and therefore together with the first condition of constraint 4 the paths between maintenances are encouraged
+Instead, they constrain which flight-aircraft assignments are feasible.
 
+---
 
-##  Objective Function
+## Optimization Approach
 
-Initial Note: Variables with a positive linear coefficient on the bqm are not being considered for the objective function as these variables are most likely to not be chosen for the solution since they may not ensure one of the previous defined constraints (example for when a variable A is depending on other variable B that was already pre fixed to 1 then although A is still part of the constraint problem considering it to the objective function may reuslt in invalid solutions). Plus, when the bqm is determined if the coefficient of a varibale is positive then that variable is more likely to be 0 than one and therefore this coefficent should not be reduced as it may allow the system to consider this varibale as 1 and calculate an invalid solution -> to be analysed
+The project contains multiple formulations developed during the investigation.
 
-### Minimize Free Seats [Free Seats = Total seats of aircraft - Needed seats for the flight]: 
+The two main approaches are:
 
-    To the possible assignments: get the minimum free seats of the possibilities that might interfer with each assignment as baseline, i.e for each pair flight-aircraft find the minimum number of free seats for all the pairs that are composed by either the considered flight or the considered aircraft
+```text
+Constraint-based formulation
+          │
+          ▼
+         BQM
 
-    For each possible assignment get the % gap
-        gap = ( current_free_seats - min_free_seats ) / current_free_seats	
+and
 
-    For each possible assignment add a bias to improve or worsen the assignment
-    (improve → minimize the actual bias)
-        bias = -SEATS_PARAM*(1-gap)
+Direct QUBO formulation
+          │
+          ▼
+         BQM
+```
 
-    Example: 
-        Ex 1: 	Aircraft 1 : Total Seats = 174
-	            Aircraft 2: Total Seats = 168
+Both ultimately produce a Binary Quadratic Model that can be evaluated by different samplers.
 
-	            Flight 1: Needed Seats = 161
+---
 
-                F1,A1: current_free_seats =  13
-                F1,A2: current_free_seats = 7
-                min_free_seats = 7
+## Binary Quadratic Models and QUBO
 
-                gap(F1,A1) = 0.4615
-                gap(F1,A2) = 0
+A QUBO problem can be expressed as:
 
-                bias(F1,A1) = -0.5385
-                bias(F1,A2) = -1
+```text
+minimize
 
-        Ex 2: 	Aircraft 1 : Total Seats = 174
-	            Aircraft 2: Total Seats = 168
+E(x) = Σᵢ hᵢxᵢ + Σᵢ<ⱼ Jᵢⱼxᵢxⱼ
+```
 
-	            Flight 1: Needed Seats = 161
-	            Flight 2: Needed Seats = 173
+where:
 
-                F1,A1: current_free_seats =  13
-                F1,A2: current_free_seats = 7
-                F2,A1: current_free_seats = 1
-                min_free_seats = 1
+- `xᵢ ∈ {0, 1}` is a binary decision variable;
+- `hᵢ` is the linear bias associated with variable `xᵢ`;
+- `Jᵢⱼ` represents the interaction between two variables.
 
-                gap(F1,A1) = 0.92307
-                gap(F1,A2) = 0.85714
-                gap(F2,A1) = 0
+In this project, the variables represent possible aircraft-flight assignments.
 
-                bias(F1,A1) = -0.07693
-                bias(F1,A2) = -0.14286
-                bias(F2,A1) = -1
+The energy function combines:
 
-    Note: SEATS_PARAM is a positive real-valued number used to tune the relative significance of assigning flights to aircraft
+```text
+E(x)
+ =
+E_constraints(x)
+ +
+E_objectives(x)
+```
 
+Low-energy configurations therefore correspond to assignments that satisfy the operational constraints while also achieving desirable optimization objectives.
 
-### Minimize Costs [Cost = - Parking (minute_parking_cost*(flight_time+rotation_time)) + Execution (dept_landing_cost + arr_landing_cost + airport_handling + fuel_cost + atc_cost + rotation_parking_cost)]
+---
 
-    To the possible assignments: get the minimum cost of the possibilities that might interfer with each assignment as baseline, i.e for each pair flight-aircraft find the minimum cost for all the pairs that are composed by either the considered flight or the considered aircraft
+## Constraint-Based Formulation
 
-    For each possible assignment get the % gap
-        gap = ( current_cost - min_cost ) / current_cost	
+The original implementation models the scheduling problem through a **Constraint Satisfaction Problem (CSP)** approach before producing the Binary Quadratic Model.
 
-    For each possible assignment add a bias to improve or worsen the assignment
-    (improve → minimize the actual bias)
-        bias = - COST_PARAM*(1-gap)
+This formulation explicitly represents logical relationships between aircraft activities.
 
-    Note 1: COST_PARAM is a positive real-valued number used to tune the relative significance of assigning flights to aircraft
-    Note: parking cost is not including time between flights or rotation time and the time is being converted directly from daily cost to minute cost
+Examples include:
+
+- mutually incompatible flights;
+- maximum one-aircraft-per-flight constraints;
+- valid activity connections;
+- paths between flights and mandatory maintenance;
+- paths between consecutive maintenance activities.
+
+The CSP formulation is retained in the repository to allow comparison with the direct QUBO approach.
+
+It can be selected from the command line using:
+
+```bash
+python main.py --csp
+```
+
+---
+
+## Direct QUBO Formulation
+
+To reduce model-construction overhead, the project also implements the scheduling constraints directly as a QUBO/BQM without first constructing an intermediate CSP model.
+
+The direct formulation includes several major components.
+
+### 1. Flight overlap
+
+For every pair of flights that cannot be performed by the same aircraft, a positive interaction is introduced between their corresponding binary variables.
+
+Selecting both assignments therefore increases the total energy.
+
+---
+
+### 2. Maximum one aircraft per flight
+
+If multiple aircraft can operate a flight, the corresponding variables receive pairwise penalties so that assigning the same flight to multiple aircraft becomes energetically unfavorable.
+
+---
+
+### 3. Invalid activity pairs
+
+Two flights may individually be valid for an aircraft while being impossible to combine into a feasible aircraft rotation.
+
+Those combinations receive penalties in the QUBO.
+
+---
+
+### 4. Aircraft routing
+
+When two selected activities are not directly connected, the model must encourage or require intermediate flights that create a valid path.
+
+For example:
+
+```text
+Flight A
+    │
+    ▼
+Intermediate flight(s)
+    │
+    ▼
+Flight B
+```
+
+The model therefore considers the network of possible activities that can connect two selected assignments.
+
+---
+
+### 5. Maintenance connectivity
+
+If an aircraft has mandatory maintenance activities at different airports, the assigned flights must form a path that allows the aircraft to reach every maintenance event.
+
+Flights that cannot participate in a feasible path between maintenance activities can be removed from consideration for that aircraft.
+
+---
+
+## Improved QUBO Formulation
+
+The repository also contains an improved version of the direct QUBO formulation.
+
+The goal is to reduce:
+
+- model construction time;
+- the number of generated variables;
+- the number of explicit logical constraints.
+
+Instead of explicitly encoding every possible long routing path, the model introduces interactions that encourage each selected flight to be followed by compatible activities.
+
+When the penalty parameters are appropriately tuned, the global low-energy solution is encouraged to form valid aircraft routes without requiring every routing relationship to be represented using additional auxiliary variables.
+
+Maintenance-related routing constraints are also simplified by encouraging assignments that connect appropriately to flights before and after mandatory maintenance activities.
+
+This represents an important part of the research carried out in the project: exploring the trade-off between **model expressiveness**, **BQM size**, and **solution quality**.
+
+---
+
+## Constraint Summary
+
+| Constraint | Purpose |
+|---|---|
+| Aircraft compatibility | Ensure the aircraft model or fleet is suitable for the flight |
+| Seat capacity | Ensure sufficient passenger capacity |
+| Business-class capacity | Ensure required premium-seat capacity |
+| Flight overlap | Prevent one aircraft from operating overlapping flights |
+| Maximum one aircraft per flight | Prevent duplicate flight assignments |
+| Activity connectivity | Maintain geographically feasible aircraft rotations |
+| Maintenance overlap | Prevent flights from conflicting with mandatory maintenance |
+| Maintenance connectivity | Ensure aircraft can reach mandatory maintenance events |
+| Fixed assignments | Pre-assign flights that are mandatory for maintaining feasibility |
+
+---
+
+## Preprocessing and Fixed Variables
+
+An important part of the model is removing decisions that do not need to be presented to the optimizer.
+
+Some aircraft-flight combinations can be identified as invalid before the BQM is constructed.
+
+Examples include:
+
+- incompatible aircraft models;
+- insufficient total seat capacity;
+- insufficient business-class capacity;
+- flights that make mandatory maintenance unreachable;
+- flights that cannot participate in a valid aircraft route.
+
+Removing these variables reduces the size of the optimization problem.
+
+The opposite situation can also occur.
+
+Some assignments may be logically mandatory.
+
+For example:
+
+```text
+Maintenance at airport A
+        │
+        ▼
+     Flight A → B
+        │
+        ▼
+Maintenance at airport B
+```
+
+If only one flight can connect two mandatory maintenance activities, that flight may be fixed to `1` for the corresponding aircraft rather than left as an optimization variable.
+
+This preprocessing reduces the search space presented to the solver.
+
+---
+
+## Optimization Objectives
+
+Once feasibility has been represented in the BQM, the model can also optimize the quality of the resulting assignment.
+
+Two main operational objectives are implemented.
+
+---
+
+### Seat Utilization
+
+The model can favor aircraft assignments that minimize unused seat capacity.
+
+For a flight `f` assigned to aircraft `a`:
+
+```text
+FreeSeats(f, a)
+ =
+AircraftCapacity(a) - PassengerDemand(f)
+```
+
+Assignments with less unnecessary capacity can be given more favorable biases.
+
+Conceptually:
+
+```text
+smaller number of unused seats
+            │
+            ▼
+   more favorable QUBO bias
+```
+
+This encourages the optimizer to use aircraft whose size more closely matches passenger demand.
+
+---
+
+### Operating Cost
+
+Aircraft assignments can also be weighted according to estimated operational cost.
+
+The model considers cost components such as:
+
+- departure landing costs;
+- arrival landing costs;
+- airport handling;
+- fuel;
+- air traffic control;
+- parking;
+- aircraft rotation costs.
+
+Assignments with lower relative operating costs receive more favorable QUBO biases.
+
+The corresponding objective parameters determine the relative influence of operational optimization compared with feasibility penalties.
+
+---
+
+## Solvers
+
+One advantage of representing the problem as a Binary Quadratic Model is that the same model can be evaluated using different optimization strategies.
+
+The solver layer includes support for several D-Wave and classical samplers.
+
+| Solver | Approach | Execution |
+|---|---|---|
+| `DWaveSampler` | Quantum annealing | D-Wave QPU |
+| `EmbeddingComposite` | QPU embedding layer | D-Wave QPU |
+| `LeapHybridSampler` | Quantum-classical hybrid | D-Wave Leap |
+| `KerberosSampler` | Hybrid decomposition | Ocean Hybrid |
+| `SimulatedAnnealingSampler` | Classical simulated annealing | Local |
+| `TabuSampler` | Tabu search | Local |
+| `ExactSolver` | Exhaustive enumeration | Local |
+
+This makes it possible to investigate the same tail-assignment formulation using quantum, hybrid, and classical solution techniques.
+
+`ExactSolver` is primarily useful for very small problem instances because its search space grows exponentially.
+
+---
+
+## Project Structure
+
+```text
+quantum-tail-assignment/
+│
+├── analysis/
+│   └── Experiment and result analysis
+│
+├── data/
+│   └── Tail-assignment problem instances
+│
+├── docs/
+│   ├── QUBO_Model_LuisNoitesMartins.pdf.pdf
+│   └── Tese_Luis_Noites_Final_2020.07.31.pdf
+│
+├── src/
+│   ├── Loader.py
+│   │
+│   ├── models/
+│   │   └── Domain models for flights, aircraft,
+│   │       maintenance activities, airports, etc.
+│   │
+│   └── scheduler/
+│       ├── CSP/
+│       │   └── Constraint-based BQM formulation
+│       │
+│       ├── QUBO/
+│       │   └── Direct QUBO formulation
+│       │
+│       ├── GenericMacros.py
+│       ├── ObjectiveFunction.py
+│       ├── Scheduler.py
+│       ├── Solution.py
+│       └── Solver.py
+│
+├── tests/
+│   └── Model and constraint tests
+│
+├── utils/
+│
+├── main.py
+├── LICENSE
+└── README.md
+```
+
+---
+
+## Input Data
+
+The problem instances are described using CSV files.
+
+Depending on the scenario, the input directory contains files describing:
+
+| File | Purpose |
+|---|---|
+| `airports.csv` | Airport information |
+| `city_pairs.csv` | Connections between airports |
+| `aircraft_models.csv` | Aircraft model characteristics |
+| `aircraft.csv` | Individual aircraft |
+| `maintenances.csv` | Mandatory aircraft maintenance |
+| `model_flights.csv` | Flights containing aircraft-model requirements |
+| `fleet_flights.csv` | Flights containing fleet requirements |
+
+The input activities should be chronologically ordered where required by the scheduling logic.
+
+In particular, flights and maintenance activities should be ordered by their start and end times.
+
+Example datasets are available under:
+
+```text
+data/
+```
+
+---
+
+## Getting Started
+
+### Requirements
+
+The project is implemented in Python and uses the D-Wave Ocean ecosystem.
+
+Core libraries used by the implementation include packages from the D-Wave stack such as:
+
+```text
+dimod
+dwave-system
+dwave-hybrid
+dwave-neal
+dwave-tabu
+```
+
+A **D-Wave Leap account** is required only when executing on D-Wave cloud resources such as a QPU or Leap hybrid solver.
+
+Classical samplers such as simulated annealing, tabu search, and the exact solver can be executed locally.
+
+For current information about installing and configuring the D-Wave Ocean SDK, see:
+
+https://docs.dwavequantum.com/
+
+> **Note**
+>
+> This repository originated as a research implementation and does not yet use a modern Python dependency manifest such as `pyproject.toml`.
+>
+> Reproducible dependency management is therefore an area that can be modernized in a future revision of the project.
+
+---
+
+## D-Wave Configuration
+
+To execute problems using D-Wave quantum or Leap hybrid solvers, configure the Ocean SDK with credentials for a D-Wave Leap account.
+
+The standard Ocean configuration workflow can be used:
+
+```bash
+dwave setup
+```
+
+or:
+
+```bash
+dwave config create
+```
+
+Follow the official D-Wave documentation for the currently recommended authentication procedure:
+
+https://docs.dwavequantum.com/
+
+Local classical solvers do not require D-Wave cloud credentials.
+
+---
+
+## Usage
+
+The main command-line entry point is:
+
+```bash
+python main.py
+```
+
+By default, the implementation:
+
+- uses the direct QUBO formulation;
+- assumes fleet-based flight requirements;
+- reads data from the default configured data directory.
+
+---
+
+### Select an Input Dataset
+
+Use `--filesdirectory`:
+
+```bash
+python main.py --filesdirectory data/final/model3
+```
+
+The path should point to the directory containing the required CSV input files.
+
+---
+
+### Aircraft Model Assignment
+
+By default, flights are interpreted using aircraft fleet requirements.
+
+To use flights containing explicitly pre-assigned aircraft models:
+
+```bash
+python main.py \
+  --aircraftmodel \
+  --filesdirectory data/final/model3
+```
+
+---
+
+### Use the CSP Formulation
+
+The direct QUBO implementation is used by default.
+
+To generate the BQM through the CSP-based formulation:
+
+```bash
+python main.py \
+  --csp \
+  --filesdirectory data/final/model3
+```
+
+---
+
+### Print the Assignment Matrix
+
+```bash
+python main.py \
+  --printmatrix \
+  --filesdirectory data/final/model3
+```
+
+---
+
+### Export a Solution
+
+```bash
+python main.py \
+  --export \
+  --filesdirectory data/final/model3
+```
+
+---
+
+### Export the BQM
+
+The Binary Quadratic Model can be generated and serialized for later solving:
+
+```bash
+python main.py \
+  --exportbqm \
+  --filesdirectory data/final/model3
+```
+
+---
+
+### Load an Existing BQM
+
+A previously serialized BQM can be loaded using:
+
+```bash
+python main.py \
+  --loadbqm path/to/model.json
+```
+
+The serialized representation includes metadata describing:
+
+- whether the model was generated using `QUBO` or `CSP`;
+- fixed variables;
+- model-construction time.
+
+---
+
+### Inspect Solutions by Energy
+
+```bash
+python main.py \
+  --energysolution \
+  --filesdirectory data/final/model3
+```
+
+---
+
+### Use an Initial Solution
+
+```bash
+python main.py \
+  --initialsolution \
+  --filesdirectory data/final/model3
+```
+
+This mode can be used when an existing assignment is available as a starting point for subsequent optimization.
+
+---
+
+### Additional Options
+
+The CLI also supports options including:
+
+```text
+--groupdata
+--generatedata
+```
+
+Run:
+
+```bash
+python main.py --help
+```
+
+for the complete set of supported arguments.
+
+---
 
 ## Testing
 
-In order to implement tests the unittest package was used.
+Tests are located under:
 
-Tests are defined in the tests folder
+```text
+tests/
+```
 
-For each scheduler type (SchedulerModel and SchedulerFleet) the tests are divided in 3 classes: SimpleTests, ComposedTests and ImprovedTests
+The test suite was designed to validate both individual constraints and complete scheduling scenarios.
 
-In the class SimpleTests are defined the more simple tests for testing the constraint in an individual manner. On the other hand, on the ComposedTests class it is possible to find tests that are more complex and aim to check how the program behaves calculating a solution for a problem that considers multiple constraints. Finally, the ImprovedTests class aims to check how well the defined objective functions work and provide with a good solution rather than just a valid solution
+Conceptually, the tests cover three levels.
 
-Test command:
+### Simple tests
 
-    python tests/*
+Validate individual scheduling constraints in isolation.
 
-### Code Coverage
+Examples include:
 
-In order to analyse the quality and coverage of the code the coverage.py package (https://coverage.readthedocs.io/en/coverage-5.1/) can be used.
+- incompatible assignments;
+- overlapping flights;
+- maintenance restrictions;
+- aircraft-capacity constraints.
 
-Run tests with coverage:
-    coverage run --source=src tests/*
+### Composed tests
 
-After running the tests it is possible to get simplified coverage report:
-    coverage report
+Combine several operational constraints in the same problem instance and verify that a feasible schedule can still be obtained.
 
-Or get a nicer presentation in html using:
-    coverage html
+### Improved tests
 
-### Scheduler fleet
+Evaluate optimization behavior rather than only feasibility, including the influence of objective functions on the quality of the selected aircraft assignments.
 
-It was implemented a scheduler to handle situations where an aircraft model is not pre-assigned to the flights but just a preferential aircraft fleet. For these cases 2 different aircraft fleet are considered:
+The project also supports coverage analysis using `coverage.py`.
 
-0. Narrow-Body Aircraft (NB)
-1. Wide-Body Aircraft (WB)
+A typical workflow is:
 
-Due to the domain context it is considered that a WB can always operate flights that require a NB aircraft but not the other way around, i.e if a flight requires a NB aircraft it can be assigned to a WB aircraft, but if a flight requires a WB aircraft then it can not be assigned to a NB aircraft (even if the NB aircraft has enough seats)
+```bash
+coverage run --source=src <test-command>
+coverage report
+```
 
-Note: No preference is given for assigning flights to the desired aircraft fleet instead of choosing one from a bigger fleet have higher costs and a considerable bigger number of seats and since these 2 situations are being minimized a flight may just be assigned to a bigger fleet than the required one if there's no other option or this assignment improves the global assignment
+or:
 
-### Command line menu
+```bash
+coverage html
+```
 
-In order to be ale to easily run both scenarios assignment considered a pre-assigned aircraft model or pre-assigned aircraft fleet some adaptions were made for it to be used as a flag --hasAircraftModel which is by default False and when used it is True.
+to generate an HTML coverage report.
 
-Additionally, an argument was also added to allow the user to set a different path for the folder where the csv data files are saved (--filesDirectory). This path should be given considering as root the root of the project and the names for the files should follow some rules:
+---
 
-* Airports file: airports.csv
-* City pairs file: city_pairs.csv
-* Aircraft models file: aircraft_models.csv
-* Aircraft file: aircraft.csv
-* Maintenances file: maintenances.csv
-* Flights file with pre-assigned aircraft model: model_flights.csv
-* Flights file with pre-assigned aircraft fleet: fleet_flights.csv
+## Research Documentation
 
+The repository includes additional documentation describing the formulation and the research behind the project.
 
-Note: Since the SchedulerFleet file was able to handle both situations (flights with pre-assigned model or flights with pre-assigned fleet) it was renamed to Scheduler. The SchedulerModel file was not deleted since it may be interesting to analyse later if for some cases separate files should be used instead of a generic scheduler due to performance issues
+### QUBO Model
 
-<!-- ### Window
+[`docs/QUBO_Model_LuisNoitesMartins.pdf.pdf`](docs/QUBO_Model_LuisNoitesMartins.pdf.pdf)
 
-For the cases where a window is used the following considerations are taken into account:
+Contains detailed material about the QUBO representation and optimization model.
 
-While improving the schedule for a specific window it is important to ensure the integrity of the full schedule. Therefore, for the cases where a schedule is previously known, after choosing the window time that will be analysed all the activities that are not totally inside the window (i.e all the activities that don't start and end inside the chosen window time) are fixed. Furthermore, the solution that will be calculated for the given window time will take into account the constraints regarding the possible connection to the window border activities (i.e activities that will happen, for each aircraft, immediately before and after the window time ). It is important to take into account that the window time selection is independent from the beginning or ending of any activity it can happen the case where the window border activities start before the window time but end inside of it or the other way around. These cases are also taken into account -->
+### Master's Thesis
+
+[`docs/Tese_Luis_Noites_Final_2020.07.31.pdf`](docs/Tese_Luis_Noites_Final_2020.07.31.pdf)
+
+Contains the broader research work associated with the implementation.
+
+These documents provide considerably more detail about the mathematical formulation, experiments, and research context than is appropriate for the main repository README.
+
+---
+
+## Research Context
+
+The Tail Assignment Problem belongs to a broader class of large combinatorial scheduling problems encountered in airline operations.
+
+Traditional approaches to problems of this type include techniques such as:
+
+- mixed-integer programming;
+- constraint programming;
+- heuristics;
+- metaheuristics;
+- decomposition methods.
+
+This project investigates an alternative representation in which operational constraints and optimization objectives are encoded into a Binary Quadratic Model.
+
+That representation is particularly interesting because it enables the same scheduling model to be evaluated through different computational paradigms:
+
+```text
+                   Binary Quadratic Model
+                           │
+          ┌────────────────┼────────────────┐
+          │                │                │
+          ▼                ▼                ▼
+      Classical         Hybrid          Quantum
+      samplers          solvers         annealing
+```
+
+The project is therefore not only an implementation of tail assignment, but also an investigation into the applicability of **quantum optimization techniques to real-world airline operations research problems**.
+
+---
+
+## Limitations
+
+This repository should be viewed primarily as a **research and experimental implementation** rather than a production airline scheduling platform.
+
+In particular:
+
+- quantum annealing performance depends strongly on QUBO formulation and penalty tuning;
+- larger problem instances may require decomposition or hybrid solving strategies;
+- direct QPU execution is constrained by available hardware topology and embedding requirements;
+- classical and quantum solver results should be compared carefully rather than assuming quantum advantage;
+- the current repository predates modern Python packaging and reproducible dependency-management practices.
+
+These limitations are part of the motivation for the project: understanding how a realistic operational optimization problem behaves when translated into a quantum-compatible formulation.
+
+---
+
+## Potential Future Work
+
+Possible extensions include:
+
+- modernizing dependency management using `pyproject.toml` and `uv`;
+- adding reproducible solver benchmarks;
+- adding GitHub Actions CI;
+- comparing solver performance across classical, hybrid, and QPU approaches;
+- documenting QUBO penalty calibration systematically;
+- adding larger and more diverse airline scenarios;
+- introducing additional operational objectives;
+- benchmarking against established classical optimization approaches;
+- investigating decomposition strategies for larger tail-assignment instances;
+- evaluating newer generations of D-Wave quantum and hybrid optimization technology.
+
+---
+
+## Authors
+
+### Main Author
+
+**Luis Noites Martins**
+
+### Supervisors
+
+**Ana Paula Rocha**
+
+**António J. M. Castro**
+
+---
+
+## License
+
+This project is licensed under the **Apache License 2.0**.
+
+See [`LICENSE`](LICENSE) for details.
+
+---
+
+## Acknowledgements
+
+This project was developed as academic research exploring the intersection of:
+
+**Airline Operations Research × Combinatorial Optimization × Quantum Computing**
+
+It uses the D-Wave Ocean software ecosystem for the formulation and evaluation of Binary Quadratic Models using quantum, hybrid, and classical optimization methods.
