@@ -1,5 +1,12 @@
 # Quantum Tail Assignment
 
+[![Python](https://img.shields.io/badge/Python-3-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![D-Wave](https://img.shields.io/badge/D--Wave-Quantum%20Annealing-008CD7.svg)](https://www.dwavesys.com/)
+[![Ocean SDK](https://img.shields.io/badge/Ocean%20SDK-Quantum%20Optimization-008CD7.svg)](https://docs.dwavequantum.com/)
+[![QUBO](https://img.shields.io/badge/QUBO-Combinatorial%20Optimization-6A5ACD.svg)](https://docs.dwavequantum.com/en/latest/concepts/models.html)
+[![Quantum Annealing](https://img.shields.io/badge/Quantum%20Annealing-Optimization-663399.svg)](https://www.dwavesys.com/solutions-and-products/quantum-computing/)
+[![Aviation](https://img.shields.io/badge/Aviation-Tail%20Assignment-1E90FF.svg)](https://en.wikipedia.org/wiki/Tail_assignment)
+
 This project aims to create an implementation of the tail assignment problem using a quantum computing approach.
 
 ## Authors
